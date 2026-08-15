@@ -13,7 +13,7 @@ Automate functional testing of TUI applications by managing a real terminal sess
 2. **Interact** — send keystrokes and wait for output to stabilize
 3. **Capture** — grab text buffer (plain + ANSI) and optional screenshot
 4. **Assert** — verify content, layout, colors, and visual appearance
-5. **Cleanup** — stop the session
+5. **Cleanup** — stop test sessions and remove temporary frames
 
 ## Prerequisites
 
@@ -24,7 +24,7 @@ Ensure Bash 3.2+ and tmux are installed: `brew install tmux` (macOS) or
 
 ```bash
 SCRIPTS="<skill-path>/scripts"
-S="my-test"
+S="tui-test-my-test"
 OUT="/tmp/tui-frames"
 
 # 1. Start the TUI app
@@ -34,11 +34,13 @@ $SCRIPTS/tui_session.sh start $S "java -jar app.jar --mode interactive" --wait-f
 $SCRIPTS/send_and_wait.sh $S "hello" --output-dir $OUT --name typed --ansi
 $SCRIPTS/send_and_wait.sh $S Enter --output-dir $OUT --name response --screenshot --timeout 60
 
-# 3. Assert on captured text
+# 3. Assert on captured text and compare with a baseline
 grep -q "expected output" $OUT/response.txt
+$SCRIPTS/capture_frame.sh $S $OUT --name after_change --ansi \
+  --diff-with response --summary --history
 
 # 4. Cleanup
-$SCRIPTS/tui_session.sh stop $S
+$SCRIPTS/tui_session.sh cleanup $OUT --session-prefix tui-test-my-test
 ```
 
 ## Scripts
@@ -49,10 +51,12 @@ $SCRIPTS/tui_session.sh stop $S
 tui_session.sh start <name> <command> [--wait-for <pattern>] [--timeout <s>] [--width <w>] [--height <h>]
 tui_session.sh stop <name>
 tui_session.sh status <name>
+tui_session.sh cleanup [<output-dir>] [--session-prefix <prefix>]
 ```
 
 - `--wait-for` blocks until pattern appears in terminal (useful for waiting until TUI is ready)
 - Default size: 120x40
+- `cleanup` stops sessions matching the prefix and removes `tui-*` frame directories under the system temporary directory
 
 ### `scripts/wait_stable.sh` — Wait for rendering to stabilize
 
@@ -65,19 +69,25 @@ Polls tmux `capture-pane` until content is unchanged for N consecutive checks. O
 ### `scripts/capture_frame.sh` — Capture text + screenshot
 
 ```
-capture_frame.sh <session> <output-dir> [--name <name>] [--screenshot] [--ansi] [--history]
+capture_frame.sh <session> <output-dir> [--name <name>] [--screenshot] [--ansi]
+                 [--history] [--diff-with <baseline-name>] [--summary]
 ```
 
 Outputs:
 - `<name>.txt` — plain text (always)
 - `<name>.ansi` — text with ANSI codes (if `--ansi`)
 - `<name>.png` — screenshot (if `--screenshot`, macOS/Linux)
+- `<name>.diff` — unified text diff (if `--diff-with`)
+- `<name>_ansi.diff` — ANSI styling diff (if `--diff-with` and `--ansi`)
 - `--history` — include the complete tmux scrollback buffer instead of only the visible viewport
+- `--summary` — print line counts, footer content, separators, and detected states
 
 ### `scripts/send_and_wait.sh` — Send keys, wait, capture
 
 ```
-send_and_wait.sh <session> <keys> [--output-dir <dir>] [--name <name>] [--screenshot] [--ansi] [--history] [--timeout <s>] [--stable-count <n>]
+send_and_wait.sh <session> <keys> [--output-dir <dir>] [--name <name>] [--screenshot]
+                 [--ansi] [--history] [--timeout <s>] [--stable-count <n>]
+                 [--diff-with <baseline-name>] [--summary]
 ```
 
 Combines: send-keys → wait_stable → capture_frame.
@@ -103,15 +113,35 @@ Use `.png` with Claude's vision (Read tool on image) to verify:
 - Overall TUI appearance matches expectations
 
 ### Diff-based regression
-Compare `.txt` or `.ansi` against known-good baselines with `diff`.
+Capture a named baseline, then use `--diff-with <name>` to produce text and
+optional ANSI diffs. Add `--summary` for a compact description of the captured
+frame and detected states.
+
+```bash
+$SCRIPTS/capture_frame.sh $S $OUT --name baseline --ansi --history
+# Interact with the application.
+$SCRIPTS/capture_frame.sh $S $OUT --name current --ansi --history \
+  --diff-with baseline --summary
+```
 
 ## Handling Streaming AI Responses
 
-For TUI apps with streaming AI output (like pi-mono-java), the text buffer changes continuously. Strategies:
+For TUI apps with streaming AI output, the text buffer changes continuously. Strategies:
 
 1. **Increase stable-count**: `wait_stable.sh session --stable-count 5 --timeout 60` — waits until 5 consecutive polls show identical content
 2. **Wait for footer change**: After response completes, footer token stats update — grep for the pattern
 3. **Two-phase capture**: Capture during streaming (partial), then capture after stable (complete)
+
+## Cleanup
+
+Use an explicit `tui-*` temporary output directory and a narrow session prefix:
+
+```bash
+$SCRIPTS/tui_session.sh cleanup /tmp/tui-frames --session-prefix tui-test-my-test
+```
+
+Cleanup rejects broad or non-temporary paths. Prefer stopping a single session
+with `tui_session.sh stop <name>` when other tests may be running concurrently.
 
 ## Interaction Reference
 

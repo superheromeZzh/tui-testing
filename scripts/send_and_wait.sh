@@ -4,6 +4,7 @@
 #   send_and_wait.sh <session-name> <keys> [--output-dir <dir>] [--name <frame-name>]
 #                    [--screenshot] [--ansi] [--history] [--timeout <seconds>]
 #                    [--delay <seconds>] [--stable-count <n>]
+#                    [--diff-with <baseline-name>] [--summary]
 #
 # <keys> uses tmux send-keys syntax: literal text, or special keys like Enter, C-c, Down, etc.
 #
@@ -32,6 +33,8 @@ DO_HISTORY=false
 TIMEOUT=30
 DELAY=0.2
 STABLE_COUNT=3
+DIFF_BASELINE=""
+DO_SUMMARY=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -43,6 +46,8 @@ while [[ $# -gt 0 ]]; do
     --timeout)     TIMEOUT="$2"; shift 2 ;;
     --delay)       DELAY="$2"; shift 2 ;;
     --stable-count) STABLE_COUNT="$2"; shift 2 ;;
+    --diff-with)   DIFF_BASELINE="$2"; shift 2 ;;
+    --summary)     DO_SUMMARY=true; shift ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -75,5 +80,7 @@ CAPTURE_ARGS=("$SESSION" "$OUTPUT_DIR" --name "$FRAME_NAME")
 if $DO_SCREENSHOT; then CAPTURE_ARGS+=(--screenshot); fi
 if $DO_ANSI; then CAPTURE_ARGS+=(--ansi); fi
 if $DO_HISTORY; then CAPTURE_ARGS+=(--history); fi
+if [[ -n "$DIFF_BASELINE" ]]; then CAPTURE_ARGS+=(--diff-with "$DIFF_BASELINE"); fi
+if $DO_SUMMARY; then CAPTURE_ARGS+=(--summary); fi
 
 "$SCRIPT_DIR/capture_frame.sh" "${CAPTURE_ARGS[@]}"
