@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
-# Capture a TUI frame: text buffer + optional screenshot, diff, and summary.
+# Capture a TUI frame: text buffer + optional screenshot.
 # Usage:
-#   capture_frame.sh <session-name> <output-dir> [--name <frame-name>] [--screenshot] [--ansi]
-#                    [--history] [--diff-with <baseline-name>] [--summary]
+#   capture_frame.sh <session-name> <output-dir> [--name <frame-name>] [--screenshot] [--ansi] [--history]
 #
 # Outputs:
 #   <output-dir>/<frame-name>.txt        Plain text buffer
 #   <output-dir>/<frame-name>.ansi       Text with ANSI codes (if --ansi)
 #   <output-dir>/<frame-name>.png        Screenshot (if --screenshot)
-#   <output-dir>/<frame-name>.diff       Unified diff (if --diff-with)
 
 set -euo pipefail
 
@@ -20,8 +18,6 @@ FRAME_NAME="frame_$(date +%s)"
 DO_SCREENSHOT=false
 DO_ANSI=false
 DO_HISTORY=false
-DIFF_BASELINE=""
-DO_SUMMARY=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -29,16 +25,11 @@ while [[ $# -gt 0 ]]; do
     --screenshot) DO_SCREENSHOT=true; shift ;;
     --ansi)       DO_ANSI=true; shift ;;
     --history)    DO_HISTORY=true; shift ;;
-    --diff-with)  DIFF_BASELINE="$2"; shift 2 ;;
-    --summary)    DO_SUMMARY=true; shift ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
 
 mkdir -p "$OUTPUT_DIR"
-
-TXT_FILE="${OUTPUT_DIR}/${FRAME_NAME}.txt"
-ANSI_FILE="${OUTPUT_DIR}/${FRAME_NAME}.ansi"
 
 CAPTURE_ARGS=(-t "$SESSION" -p)
 if $DO_HISTORY; then
@@ -46,76 +37,13 @@ if $DO_HISTORY; then
 fi
 
 # Capture plain text
-tmux capture-pane "${CAPTURE_ARGS[@]}" > "$TXT_FILE"
-echo "Captured text: $TXT_FILE"
+tmux capture-pane "${CAPTURE_ARGS[@]}" > "${OUTPUT_DIR}/${FRAME_NAME}.txt"
+echo "Captured text: ${OUTPUT_DIR}/${FRAME_NAME}.txt"
 
 # Capture with ANSI escape codes
 if $DO_ANSI; then
-  tmux capture-pane "${CAPTURE_ARGS[@]}" -e > "$ANSI_FILE"
-  echo "Captured ANSI: $ANSI_FILE"
-fi
-
-if [[ -n "$DIFF_BASELINE" ]]; then
-  BASELINE_FILE="${OUTPUT_DIR}/${DIFF_BASELINE}.txt"
-  DIFF_FILE="${OUTPUT_DIR}/${FRAME_NAME}.diff"
-
-  if [[ -f "$BASELINE_FILE" ]]; then
-    diff -u --label "$DIFF_BASELINE" --label "$FRAME_NAME" \
-      "$BASELINE_FILE" "$TXT_FILE" > "$DIFF_FILE" 2>/dev/null || true
-
-    if [[ -s "$DIFF_FILE" ]]; then
-      ADDED="$(grep -c '^+[^+]' "$DIFF_FILE" 2>/dev/null || true)"
-      REMOVED="$(grep -c '^-[^-]' "$DIFF_FILE" 2>/dev/null || true)"
-      echo "Diff: $DIFF_FILE (+${ADDED:-0}/-${REMOVED:-0} lines vs $DIFF_BASELINE)"
-      echo "--- Key changes ---"
-      grep '^[+-][^+-]' "$DIFF_FILE" | sed -n '1,15p' || true
-      TOTAL_CHANGES=$(( ${ADDED:-0} + ${REMOVED:-0} ))
-      if [[ $TOTAL_CHANGES -gt 15 ]]; then
-        echo "... ($((TOTAL_CHANGES - 15)) more changes)"
-      fi
-    else
-      echo "Diff: no differences from $DIFF_BASELINE"
-      rm -f "$DIFF_FILE"
-    fi
-
-    if $DO_ANSI; then
-      BASELINE_ANSI="${OUTPUT_DIR}/${DIFF_BASELINE}.ansi"
-      ANSI_DIFF_FILE="${OUTPUT_DIR}/${FRAME_NAME}_ansi.diff"
-      if [[ -f "$BASELINE_ANSI" ]]; then
-        diff -u --label "${DIFF_BASELINE}.ansi" --label "${FRAME_NAME}.ansi" \
-          "$BASELINE_ANSI" "$ANSI_FILE" > "$ANSI_DIFF_FILE" 2>/dev/null || true
-        if [[ -s "$ANSI_DIFF_FILE" ]]; then
-          ANSI_CHANGES="$(grep -c '^[+-][^+-]' "$ANSI_DIFF_FILE" 2>/dev/null || true)"
-          echo "ANSI diff: $ANSI_DIFF_FILE (${ANSI_CHANGES:-0} styling changes)"
-        else
-          echo "ANSI diff: no styling differences"
-          rm -f "$ANSI_DIFF_FILE"
-        fi
-      else
-        echo "WARN: ANSI baseline not found: $BASELINE_ANSI" >&2
-      fi
-    fi
-  else
-    echo "WARN: Baseline not found: $BASELINE_FILE (skipping diff)" >&2
-  fi
-fi
-
-if $DO_SUMMARY; then
-  echo "--- Summary ---"
-  LINE_COUNT="$(wc -l < "$TXT_FILE" | tr -d ' ')"
-  NON_EMPTY="$(grep -c '.' "$TXT_FILE" 2>/dev/null || true)"
-  echo "Lines: $LINE_COUNT total, ${NON_EMPTY:-0} non-empty"
-
-  FOOTER="$(grep -E '↑|↓|%/' "$TXT_FILE" 2>/dev/null | tail -1 || true)"
-  if [[ -n "$FOOTER" ]]; then
-    echo "Footer: $FOOTER"
-  fi
-
-  SEPARATOR_COUNT="$(grep -c '────' "$TXT_FILE" 2>/dev/null || true)"
-  echo "Separators: ${SEPARATOR_COUNT:-0}"
-  grep -q 'Working\.\.\.' "$TXT_FILE" 2>/dev/null && echo "State: streaming (spinner visible)" || true
-  grep -q 'Operation aborted' "$TXT_FILE" 2>/dev/null && echo "State: aborted" || true
-  grep -q '✓' "$TXT_FILE" 2>/dev/null && echo "State: success indicator present" || true
+  tmux capture-pane "${CAPTURE_ARGS[@]}" -e > "${OUTPUT_DIR}/${FRAME_NAME}.ansi"
+  echo "Captured ANSI: ${OUTPUT_DIR}/${FRAME_NAME}.ansi"
 fi
 
 # Screenshot via macOS screencapture
