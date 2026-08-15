@@ -113,15 +113,9 @@ if $DO_SUMMARY; then
 
   SEPARATOR_COUNT="$(grep -c '────' "$TXT_FILE" 2>/dev/null || true)"
   echo "Separators: ${SEPARATOR_COUNT:-0}"
-  if grep -q 'Working\.\.\.' "$TXT_FILE" 2>/dev/null; then
-    echo "State: streaming (spinner visible)"
-  fi
-  if grep -q 'Operation aborted' "$TXT_FILE" 2>/dev/null; then
-    echo "State: aborted"
-  fi
-  if grep -q '✓' "$TXT_FILE" 2>/dev/null; then
-    echo "State: success indicator present"
-  fi
+  grep -q 'Working\.\.\.' "$TXT_FILE" 2>/dev/null && echo "State: streaming (spinner visible)" || true
+  grep -q 'Operation aborted' "$TXT_FILE" 2>/dev/null && echo "State: aborted" || true
+  grep -q '✓' "$TXT_FILE" 2>/dev/null && echo "State: success indicator present" || true
 fi
 
 # Screenshot via macOS screencapture
